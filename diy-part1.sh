@@ -16,14 +16,18 @@
 
 
 # Add a feed source
+# SSR Plus+ (helloworld)
 echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
-#echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
 
-# Add OpenClash feed
-echo 'src-git openclash https://github.com/vernesong/OpenClash' >>feeds.conf.default
-
-# Add PassWall2 feed
+# PassWall 2
 echo 'src-git passwall2 https://github.com/xiaorouji/openwrt-passwall2' >>feeds.conf.default
 
-# Add luci-app packages
-echo 'src-git small8 https://github.com/small8/luci-app-packages' >>feeds.conf.default
+# OpenClash
+echo 'src-git openclash https://github.com/vernesong/OpenClash' >>feeds.conf.default
+
+# kenzok8 常用插件汇总(DDNS-GO/Tailscale等)
+echo 'src-git kenzo https://github.com/kenzok8/openwrt-packages' >>feeds.conf.default
+echo 'src-git small https://github.com/kenzok8/small' >>feeds.conf.default
+
+# EasyTier 异地组网官方LuCI
+echo 'src-git easytier https://github.com/EasyTier/luci-app-easytier' >>feeds.conf.default
