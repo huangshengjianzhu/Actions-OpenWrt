@@ -51,35 +51,48 @@ jobs:
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
-          set -e
           cd /home/runner/work/Actions-OpenWrt/Actions-OpenWrt
           mkdir -p parts
-          split -b 100M -d -a 2 openwrt-sources.tar.gz parts/part_
+          split -b 95M -d -a 2 openwrt-sources.tar.gz parts/part_
           echo "=== 分卷列表 ==="
           ls -lh parts/
-          # 创建仓库A release
-          REL_A=$(curl -s -X POST "https://gitee.com/api/v5/repos/yuanjianzhu/openwrt-sources/releases?access_token=$GITEE_TOKEN" -H "Content-Type: application/json" -d '{"tag_name":"sources-v1","name":"openwrt-sources 分卷A","prerelease":true}')
-          REL_A_ID=$(echo "$REL_A" | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
-          echo "仓库A release ID: $REL_A_ID"
-          # 创建仓库B release
-          REL_B=$(curl -s -X POST "https://gitee.com/api/v5/repos/yuanjianzhu/openwrt-sources-b/releases?access_token=$GITEE_TOKEN" -H "Content-Type: application/json" -d '{"tag_name":"sources-v1","name":"openwrt-sources 分卷B","prerelease":true}')
-          REL_B_ID=$(echo "$REL_B" | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
-          echo "仓库B release ID: $REL_B_ID"
-          # 上传分卷(前10个到A,其余到B)
-          i=0
+          TAG="sources-$(date +%s)"
+          REL_A_ID=""
+          for r in 1 2 3; do
+            REL_A=$(curl -s -X POST "https://gitee.com/api/v5/repos/yuanjianzhu/openwrt-sources/releases?access_token=$GITEE_TOKEN" -H "Content-Type: application/json" -d "{\"tag_name\":\"$TAG\",\"name\":\"openwrt-sources 分卷A\",\"prerelease\":true}")
+            REL_A_ID=$(echo "$REL_A" | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])" 2>/dev/null || echo "")
+            [ -n "$REL_A_ID" ] && break
+            echo "A release重试$r: $(echo $REL_A | head -c 120)"
+            sleep 3
+          done
+          REL_B_ID=""
+          for r in 1 2 3; do
+            REL_B=$(curl -s -X POST "https://gitee.com/api/v5/repos/yuanjianzhu/openwrt-sources-b/releases?access_token=$GITEE_TOKEN" -H "Content-Type: application/json" -d "{\"tag_name\":\"$TAG\",\"name\":\"openwrt-sources 分卷B\",\"prerelease\":true}")
+            REL_B_ID=$(echo "$REL_B" | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])" 2>/dev/null || echo "")
+            [ -n "$REL_B_ID" ] && break
+            echo "B release重试$r: $(echo $REL_B | head -c 120)"
+            sleep 3
+          done
+          if [ -z "$REL_A_ID" ]; then echo "!!! 仓库A release创建失败"; fi
+          if [ -z "$REL_B_ID" ]; then echo "!!! 仓库B release创建失败"; fi
+          i=0; fail=0
           for f in parts/part_*; do
-            if [ $i -lt 10 ]; then
-              code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "https://gitee.com/api/v5/repos/yuanjianzhu/openwrt-sources/releases/$REL_A_ID/attach_files?access_token=$GITEE_TOKEN" -F "file=@$f")
-              echo "A: $f -> $code"
+            if [ -n "$REL_A_ID" ] && [ $i -lt 10 ]; then
+              code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "https://gitee.com/api/v5/repos/yuanjianzhu/openwrt-sources/releases/$REL_A_ID/attach_files?access_token=$GITEE_TOKEN" -F "file=@$f" || true)
+            elif [ -n "$REL_B_ID" ]; then
+              code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "https://gitee.com/api/v5/repos/yuanjianzhu/openwrt-sources-b/releases/$REL_B_ID/attach_files?access_token=$GITEE_TOKEN" -F "file=@$f" || true)
             else
-              code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "https://gitee.com/api/v5/repos/yuanjianzhu/openwrt-sources-b/releases/$REL_B_ID/attach_files?access_token=$GITEE_TOKEN" -F "file=@$f")
-              echo "B: $f -> $code"
+              code="000"
             fi
+            echo "$f -> $code"
+            if [ "$code" != "201" ] && [ "$code" != "200" ]; then fail=$((fail+1)); fi
             i=$((i+1))
           done
-          echo "=== 上传完成 ==="
+          echo "=== 上传完成, 失败 $fail 个 ==="
+          if [ $fail -gt 0 ]; then echo "!!! 有 $fail 个分卷上传失败(原料包artifact已保底)"; fi
 
       - name: Upload artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-sources
