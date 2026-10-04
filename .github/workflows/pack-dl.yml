@@ -47,6 +47,38 @@ jobs:
           tar czf ../openwrt-sources.tar.gz dl feeds package
           ls -lh ../openwrt-sources.tar.gz
 
+      - name: Split and upload to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          set -e
+          cd /home/runner/work/Actions-OpenWrt/Actions-OpenWrt
+          mkdir -p parts
+          split -b 100M -d -a 2 openwrt-sources.tar.gz parts/part_
+          echo "=== 分卷列表 ==="
+          ls -lh parts/
+          # 创建仓库A release
+          REL_A=$(curl -s -X POST "https://gitee.com/api/v5/repos/yuanjianzhu/openwrt-sources/releases?access_token=$GITEE_TOKEN" -H "Content-Type: application/json" -d '{"tag_name":"sources-v1","name":"openwrt-sources 分卷A","prerelease":true}')
+          REL_A_ID=$(echo "$REL_A" | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+          echo "仓库A release ID: $REL_A_ID"
+          # 创建仓库B release
+          REL_B=$(curl -s -X POST "https://gitee.com/api/v5/repos/yuanjianzhu/openwrt-sources-b/releases?access_token=$GITEE_TOKEN" -H "Content-Type: application/json" -d '{"tag_name":"sources-v1","name":"openwrt-sources 分卷B","prerelease":true}')
+          REL_B_ID=$(echo "$REL_B" | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+          echo "仓库B release ID: $REL_B_ID"
+          # 上传分卷(前10个到A,其余到B)
+          i=0
+          for f in parts/part_*; do
+            if [ $i -lt 10 ]; then
+              code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "https://gitee.com/api/v5/repos/yuanjianzhu/openwrt-sources/releases/$REL_A_ID/attach_files?access_token=$GITEE_TOKEN" -F "file=@$f")
+              echo "A: $f -> $code"
+            else
+              code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "https://gitee.com/api/v5/repos/yuanjianzhu/openwrt-sources-b/releases/$REL_B_ID/attach_files?access_token=$GITEE_TOKEN" -F "file=@$f")
+              echo "B: $f -> $code"
+            fi
+            i=$((i+1))
+          done
+          echo "=== 上传完成 ==="
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
