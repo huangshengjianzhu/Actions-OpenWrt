@@ -66,13 +66,17 @@ jobs:
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
-    - name: Cache ccache
+    - name: Cache build progress
       uses: actions/cache@v4
       with:
-        path: /workdir/.ccache
-        key: openwrt-ccache-${{ github.run_id }}
+        path: |
+          /workdir/openwrt/build_dir
+          /workdir/openwrt/staging_dir
+          /workdir/openwrt/feeds
+          /workdir/.ccache
+        key: openwrt-progress-${{ github.run_id }}
         restore-keys: |
-          openwrt-ccache-
+          openwrt-progress-
     - name: Download package
       id: package
       run: |
@@ -97,12 +101,16 @@ jobs:
         sed -i '/^CONFIG_PACKAGE_kmod-drm-i915=/d' .config
         sed -i '/^CONFIG_PACKAGE_kmod-jool-netfilter=/d' .config
         for p in e1000e igb igc ixgbe i40e ice r8169 mlx5-core vmxnet3; do echo "CONFIG_PACKAGE_kmod-$p=y" >> .config; done
-        # 精简次要插件确保6小时内完成(核心功能全保留)
-        for p in luci-app-accesscontrol luci-app-adblock luci-app-advanced-reboot luci-app-ahcp luci-app-dump1090 luci-app-filetransfer luci-app-frpc luci-app-frps luci-app-hd-idle luci-app-kodexplorer luci-app-minidlna luci-app-nlbwmon luci-app-oled luci-app-qos luci-app-sqm luci-app-smartdns luci-app-socat luci-app-transmission luci-app-unblockmusic luci-app-uugamebooster luci-app-vsftpd luci-app-watchcat luci-app-wifischedule luci-app-wol luci-app-xlnetacc luci-app-ramfree; do sed -i "/^CONFIG_PACKAGE_${p}=/d" .config; done
         make defconfig
-        echo -e "$(nproc) thread compile"
-        make -j$(nproc) || make -j1 || make -j1 V=s
-        echo "status=success" >> $GITHUB_OUTPUT
+        echo -e "$(nproc) thread compile, 最多5小时自动暂停保存进度,下次续编"
+        timeout -k 5m 300m make -j$(nproc) || echo "make未在5小时内完成或失败,进度已保存"
+        if ls bin/targets/*/*/openwrt-*-combined-efi.img.gz >/dev/null 2>&1; then
+          echo "编译完成!"
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "编译未完成,等待下次续编"
+          echo "status=partial" >> $GITHUB_OUTPUT
+        fi
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
@@ -119,10 +127,15 @@ jobs:
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        cd openwrt/bin/targets/*/*
-        rm -rf packages
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
+        if ls openwrt/bin/targets/*/*/openwrt-*-combined-efi.img.gz >/dev/null 2>&1; then
+          cd openwrt/bin/targets/*/*
+          rm -rf packages
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "固件未生成(未完成或失败),编译进度已由Cache保存"
+          echo "status=partial" >> $GITHUB_OUTPUT
+        fi
     - name: Upload firmware directory
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success' && !cancelled()
