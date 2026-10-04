@@ -1,0 +1,55 @@
+name: Pack-DL
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialization
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt update
+          sudo apt -y install build-essential asciidoc binutils bzip2 gawk gettext git libncurses-dev libz-dev patch python3 python3-pip unzip zlib1g-dev lib32gcc-s1 libc6-dev-i386 subversion flex gcc-multilib g++-multilib p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx-ucl libelf-dev autoconf automake libtool autopoint gperf wget curl swig rsync
+
+      - name: Clone lede
+        run: git clone --depth 1 https://github.com/coolsnowwolf/lede openwrt
+
+      - name: Load custom feeds
+        run: |
+          cd openwrt
+          chmod +x $GITHUB_WORKSPACE/diy-part1.sh
+          $GITHUB_WORKSPACE/diy-part1.sh
+
+      - name: Update feeds
+        run: cd openwrt && ./scripts/feeds update -a
+
+      - name: Install feeds
+        run: cd openwrt && ./scripts/feeds install -a
+
+      - name: Load configuration
+        run: |
+          cd openwrt
+          cp $GITHUB_WORKSPACE/.config .config
+          make defconfig
+
+      - name: Download packages (DL)
+        run: cd openwrt && (make download -j$(nproc) || true)
+
+      - name: Pack all sources
+        run: |
+          cd openwrt
+          tar czf ../openwrt-sources.tar.gz dl feeds package
+          ls -lh ../openwrt-sources.tar.gz
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-sources
+          path: openwrt-sources.tar.gz
+          retention-days: 7
