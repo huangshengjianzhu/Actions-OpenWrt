@@ -116,6 +116,12 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 重跑 package/install V=s 详细错误" >> $GITHUB_STEP_SUMMARY
           (make package/install V=s 2>&1 | grep -iE 'ERROR|Error|conflict|No space|No such|cannot|not found|failed|Collected' | tail -60) >> $GITHUB_STEP_SUMMARY || echo "(重跑无错误输出)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 重跑 target/install V=s 详细错误" >> $GITHUB_STEP_SUMMARY
+          (make target/install V=s 2>&1 | grep -iE 'ERROR|Error|conflict|No space|No such|cannot|not found|failed|Collected|cannot create' | tail -80) >> $GITHUB_STEP_SUMMARY || echo "(target/install无错误输出)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 磁盘空间" >> $GITHUB_STEP_SUMMARY
+          (df -h /workdir | tail -5) >> $GITHUB_STEP_SUMMARY
         fi
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
